@@ -22,16 +22,33 @@ A native macOS app for burning long-term archive discs. It turns a folder into a
 - An internal or USB Blu-ray burner. Many slim USB drives need both USB plugs connected to burn reliably.
 - Building from source needs Xcode 16+ or a Swift 6 toolchain.
 
-## Build and run
+## Install
+
+1. Download `ArchiveBurner-<version>.zip` from [Releases](https://github.com/zori7/burncraft-mac/releases).
+2. Unzip it. Double-click the zip in Finder; Safari usually unzips downloads automatically.
+3. Drag **ArchiveBurner.app** into your **Applications** folder.
+4. Open it. The app isn't notarized by Apple, so the first launch is blocked with a warning. To allow it:
+   - **macOS 15 and later:** try to open the app once, then go to **System Settings → Privacy & Security**, scroll down to the message about ArchiveBurner, click **Open Anyway** and confirm.
+   - **macOS 14:** right-click (or Control-click) the app, choose **Open**, then click **Open** in the dialog.
+   - **If macOS says the app "is damaged"**, or neither option works, remove the download quarantine in Terminal:
+     ```sh
+     xattr -dr com.apple.quarantine /Applications/ArchiveBurner.app
+     ```
+
+   You only need to do this once. After that the app opens normally.
+
+The app is a universal build that runs on both Apple Silicon and Intel Macs.
+
+## Build from source
 
 ```sh
 git clone https://github.com/zori7/burncraft-mac.git
 cd burncraft-mac
-./scripts/build-app.sh        # → build/ArchiveBurner.app
+./scripts/build-app.sh        # → build/ArchiveBurner.app + build/ArchiveBurner-<version>.zip
 open build/ArchiveBurner.app
 ```
 
-The app is ad-hoc signed for local use. If you share the built app, Gatekeeper will ask the recipient to approve it, unless you sign and notarize it with your own Developer ID.
+The script builds a universal binary (arm64 + x86_64), signs it ad hoc, and packages it with `ditto` into the zip used for GitHub releases.
 
 For development:
 

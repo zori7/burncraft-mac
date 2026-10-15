@@ -1,13 +1,15 @@
 #!/bin/bash
-# Builds build/<APP_NAME>.app from the Swift package, using names from app.config.
+# Builds build/<APP_NAME>.app (universal: Apple Silicon + Intel) and a release zip
+# build/<APP_NAME>-<VERSION>.zip, using names from app.config.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT/app.config"
 
 "$ROOT/scripts/gen-config.sh"
 
-swift build -c release --package-path "$ROOT" --product App
-BIN_DIR="$(swift build -c release --package-path "$ROOT" --show-bin-path)"
+ARCHS=(--arch arm64 --arch x86_64)
+swift build -c release --package-path "$ROOT" "${ARCHS[@]}" --product App
+BIN_DIR="$(swift build -c release --package-path "$ROOT" "${ARCHS[@]}" --show-bin-path)"
 
 APP="$ROOT/build/$APP_NAME.app"
 rm -rf "$APP"
@@ -38,4 +40,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 
 codesign --force --sign - "$APP"
-echo "Built $APP"
+echo "Built $APP ($(lipo -archs "$APP/Contents/MacOS/$APP_NAME"))"
+
+# ditto keeps the bundle structure and signature intact (plain zip can break them).
+ZIP="$ROOT/build/$APP_NAME-$VERSION.zip"
+rm -f "$ZIP"
+ditto -c -k --keepParent "$APP" "$ZIP"
+echo "Packaged $ZIP"
