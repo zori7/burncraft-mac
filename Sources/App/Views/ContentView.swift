@@ -45,7 +45,7 @@ private struct ActionBar: View {
         HStack {
             if model.runner.isRunning {
                 Button("Cancel", role: .cancel) {
-                    if isBurning { confirmCancelBurn = true } else { model.cancel() }
+                    if model.isBurning { confirmCancelBurn = true } else { model.cancel() }
                 }
                 .keyboardShortcut(.cancelAction)
             } else {
@@ -63,16 +63,31 @@ private struct ActionBar: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(!model.canStart)
         }
+        .alert(
+            "Image already exists",
+            isPresented: Binding(
+                get: { model.jobAwaitingImageChoice != nil },
+                set: { if !$0 { model.resolveExistingImage(nil) } }),
+            presenting: model.jobAwaitingImageChoice
+        ) { _ in
+            Button("Use Existing") { model.resolveExistingImage(.reuse) }
+            Button("Replace", role: .destructive) { model.resolveExistingImage(.replace) }
+            Button("Cancel", role: .cancel) { model.resolveExistingImage(nil) }
+        } message: { job in
+            Text("""
+                \(job.imageURL.path) already exists.
+
+                Use Existing burns that image as it is and skips cleanup, checksums and \
+                building. It won't include changes made to the folder since it was built.
+                Replace builds a new image from the folder.
+                """)
+        }
         .padding(12)
         .confirmationDialog("Stop the burn?", isPresented: $confirmCancelBurn) {
             Button("Stop Burn", role: .destructive) { model.cancel() }
         } message: {
             Text("Stopping a burn in progress will most likely leave the disc unusable.")
         }
-    }
-
-    private var isBurning: Bool {
-        model.runner.steps.contains { $0.id == .burn && { if case .running = $0.state { true } else { false } }($0) }
     }
 
     private func pickVerifyFolder() {

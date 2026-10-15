@@ -20,20 +20,22 @@ public struct BurnStep: PipelineStep {
         if let free = media.freeBytes, imageSize > free {
             throw PipelineError.doesNotFit("Image (\(ByteFormat.gib(imageSize))) is larger than the disc's free space (\(ByteFormat.gib(free))).")
         }
-        if !job.media.matches(discRecordingType: media.discRecordingType) {
-            await context.log("⚠️ Inserted disc (\(media.typeName)) is not a \(job.media.displayName).")
+        if let mismatch = Self.mediaMismatch(inserted: media, expected: job.media) {
+            await context.log("⚠️ \(mismatch)")
+            let proceed = await context.confirm(ConfirmationRequest(
+                title: "Disc doesn't match Media",
+                message: "\(mismatch) Continue with this disc?",
+                confirmLabel: "Continue Anyway",
+                isDestructive: true))
+            guard proceed else { throw PipelineError.declined("inserted disc doesn't match Media") }
+            await context.log("Continuing with the inserted disc.")
         }
 
+        // No final "Burn?" question: the settings were chosen before Start, and the
+        // risky cases (size, existing image, mismatched disc) already ask. This keeps
+        // long runs unattended.
         let driveName = await burner.currentDrive()?.name ?? "the drive"
-        let proceed = await context.confirm(ConfirmationRequest(
-            title: "Burn disc?",
-            message: """
-                \(image.lastPathComponent) (\(ByteFormat.gib(imageSize)))
-                to \(media.typeName) in \(driveName) at \(job.burnSpeed)x.
-                Drive verification: \(job.verification.usesDriveVerify ? "on" : "off").
-                """,
-            confirmLabel: "Burn"))
-        guard proceed else { throw PipelineError.declined("burn not confirmed") }
+        await context.log("Burning \(image.lastPathComponent) (\(ByteFormat.gib(imageSize))) to \(media.typeName) in \(driveName).")
 
         let request = BurnRequest(
             image: image,
@@ -47,5 +49,15 @@ public struct BurnStep: PipelineStep {
             }
         }
         await context.log("Burn finished.")
+    }
+
+    /// Describes how the inserted disc differs from the Media setting, or nil if it matches.
+    static func mediaMismatch(inserted: MediaStatus, expected: MediaType) -> String? {
+        if let detected = MediaType.matching(inserted) {
+            return detected == expected ? nil
+                : "Inserted disc looks like \(detected.displayName), but Media is set to \(expected.displayName)."
+        }
+        return expected.matches(discRecordingType: inserted.discRecordingType) ? nil
+            : "Inserted disc (\(inserted.typeName)) is not a \(expected.displayName)."
     }
 }

@@ -118,7 +118,7 @@ final class FakeCommandRunner: CommandRunning, @unchecked Sendable {
 
 @MainActor
 final class FakeBurner: DiscBurning {
-    var media: MediaStatus? = MediaStatus(isBlank: true, discRecordingType: "DRDeviceMediaTypeBDR", freeBytes: 50 * MediaType.gib)
+    var media: MediaStatus? = MediaStatus(isBlank: true, discRecordingType: "DRDeviceMediaTypeBDR", freeBytes: MediaType.bdr50.capacityBytes)
     var requests: [BurnRequest] = []
     var hangUntilCancelled = false
     var aborted = false

@@ -12,6 +12,13 @@
 // - Capacities and limits are consistent (limit <= capacity, 2048-byte blocks)
 //   and speed choices are positive.
 // - Defaults match the script: BD-R DL 50 GB at 4x.
+// - Detecting the media from an inserted blank disc: BD-R 25/50/100 told apart by
+//   free space, BD-RE by type; no match for non-blank discs, unknown types or sizes
+//   that fit no entry.
+//
+// VerificationModeTests covers:
+// - Turning off checksum generation maps Checksums only / Drive + checksums to
+//   Drive verify only, and leaves Drive verify only / None unchanged.
 //
 // AppInfoTests covers:
 // - Name, bundle id and log folder come from the generated app.config values,
@@ -84,10 +91,40 @@ import Testing
         #expect(media.speedChoices.allSatisfy { $0 > 0 })
     }
 
+    @Test(arguments: MediaType.all)
+    func detectsEachMediaFromBlankDisc(media: MediaType) {
+        let type = media.discRecordingTypes.first
+        #expect(MediaType.matching(MediaStatus(isBlank: true, discRecordingType: type, freeBytes: media.capacityBytes)) == media)
+        // Drives may report slightly less than the nominal capacity.
+        let slightlyLess = media.capacityBytes - media.capacityBytes / 100
+        #expect(MediaType.matching(MediaStatus(isBlank: true, discRecordingType: type, freeBytes: slightlyLess)) == media)
+    }
+
+    @Test func noDetectionWithoutAClearMatch() {
+        let bdr = "DRDeviceMediaTypeBDR"
+        let full = MediaType.bdr50.capacityBytes
+        #expect(MediaType.matching(MediaStatus(isBlank: false, discRecordingType: bdr, freeBytes: full)) == nil)
+        #expect(MediaType.matching(MediaStatus(isBlank: true, discRecordingType: bdr, freeBytes: nil)) == nil)
+        #expect(MediaType.matching(MediaStatus(isBlank: true, discRecordingType: "DRDeviceMediaTypeDVDR", freeBytes: full)) == nil)
+        #expect(MediaType.matching(MediaStatus(isBlank: true, discRecordingType: bdr, freeBytes: 35 * MediaType.gib)) == nil)
+        // A 50 GB BD-RE isn't registered, so it must not be taken for the 25 GB one.
+        #expect(MediaType.matching(MediaStatus(isBlank: true, discRecordingType: "DRDeviceMediaTypeBDRE", freeBytes: full)) == nil)
+    }
+
     @Test func defaultsMatchTheScript() {
         #expect(MediaType.default == .bdr50)
         #expect(AppInfo.defaultBurnSpeed == 4)
         #expect(MediaType.bdr50.speedFactor(forKBps: MediaType.bdr50.speedKBps(forFactor: 4)) == 4)
+    }
+}
+
+@Suite struct VerificationModeTests {
+    @Test func withoutChecksumVerifyKeepsOnlyTheDriveCheck() {
+        #expect(VerificationMode.checksums.withoutChecksumVerify == .drive)
+        #expect(VerificationMode.both.withoutChecksumVerify == .drive)
+        #expect(VerificationMode.drive.withoutChecksumVerify == .drive)
+        #expect(VerificationMode.none.withoutChecksumVerify == .none)
+        #expect(VerificationMode.allCases.allSatisfy { !$0.withoutChecksumVerify.usesChecksumVerify })
     }
 }
 

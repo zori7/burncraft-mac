@@ -16,7 +16,7 @@ final class AppModel {
     }
 
     private let defaults = UserDefaults.standard
-    let burner = DiscRecordingBurner()
+    let burner: any DiscBurning
     let runner: PipelineRunner
 
     var sourceFolder: URL?
@@ -33,7 +33,14 @@ final class AppModel {
         }
     }
     var verification: VerificationMode {
-        didSet { defaults.set(verification.rawValue, forKey: Keys.verification) }
+        didSet {
+            defaults.set(verification.rawValue, forKey: Keys.verification)
+            // Checksum verification needs the manifest, so turn its generation back on.
+            if verification.usesChecksumVerify, skippedSteps.contains(.checksums) {
+                skippedSteps.remove(.checksums)
+                showHint("Generate checksums was turned on. \(verification.displayName) needs it.")
+            }
+        }
     }
     var cleanMetadata: Bool {
         didSet { defaults.set(cleanMetadata, forKey: Keys.cleanMetadata) }
@@ -42,11 +49,16 @@ final class AppModel {
         didSet { defaults.set(burnSpeed, forKey: Keys.burnSpeed) }
     }
 
+    /// A short message shown briefly when one setting changes another.
+    private(set) var hint: String?
+    private var hintDismissal: Task<Void, Never>?
+
     private(set) var drive: DriveInfo?
     private(set) var insertedMedia: MediaStatus?
     private(set) var lastJob: ArchiveJob?
 
     init() {
+        burner = AppInfo.isSimulatedDriveEnabled ? SimulatedBurner() : DiscRecordingBurner()
         runner = PipelineRunner(
             services: PipelineServices(
                 commandRunner: ProcessCommandRunner(),
@@ -72,8 +84,51 @@ final class AppModel {
         return offered.isEmpty ? media.speedChoices : Array(Set(offered)).sorted()
     }
 
+    /// True while the Burn step is running. Eject stays available otherwise, so a
+    /// disc can be swapped while a run waits for a blank one.
+    var isBurning: Bool {
+        runner.steps.contains { step in
+            if step.id == .burn, case .running = step.state { true } else { false }
+        }
+    }
+
     var canStart: Bool {
         !runner.isRunning && sourceFolder != nil && outputFolder != nil && volumeNameProblem == nil
+    }
+
+    /// Steps with a step toggle. Cleanup's toggle is the persisted `cleanMetadata`
+    /// setting; the others are per-run skips.
+    func isStepOn(_ id: StepID) -> Bool {
+        id == .clean ? cleanMetadata : !skippedSteps.contains(id)
+    }
+
+    func setStep(_ id: StepID, on: Bool) {
+        if id == .clean {
+            cleanMetadata = on
+        } else if on {
+            skippedSteps.remove(id)
+        } else {
+            skippedSteps.insert(id)
+            if id == .checksums, verification.usesChecksumVerify {
+                let previous = verification
+                verification = previous.withoutChecksumVerify
+                showHint("Verify changed from \(previous.displayName) to \(verification.displayName). Checksum verification needs Generate checksums.")
+            }
+        }
+    }
+
+    func showHint(_ message: String) {
+        hint = message
+        hintDismissal?.cancel()
+        hintDismissal = Task {
+            try? await Task.sleep(for: .seconds(5))
+            if !Task.isCancelled { hint = nil }
+        }
+    }
+
+    func dismissHint() {
+        hintDismissal?.cancel()
+        hint = nil
     }
 
     func makeJob() -> ArchiveJob? {
@@ -92,9 +147,32 @@ final class AppModel {
 
     // MARK: Actions
 
+    /// A run waiting for the user to choose what to do with an existing image.
+    private(set) var jobAwaitingImageChoice: ArchiveJob?
+
     func start() {
         guard canStart, let job = makeJob() else { return }
+        if job.needsExistingImageChoice {
+            jobAwaitingImageChoice = job
+            return
+        }
+        startRun(job)
+    }
+
+    /// Answer to the existing-image dialog; nil cancels the run.
+    func resolveExistingImage(_ choice: ExistingImageChoice?) {
+        guard var job = jobAwaitingImageChoice else { return }
+        jobAwaitingImageChoice = nil
+        guard let choice else { return }
+        job.existingImage = choice
+        startRun(job)
+    }
+
+    private func startRun(_ job: ArchiveJob) {
         lastJob = job
+        if drive?.isSimulated == true {
+            runner.appendLog("⚠️ Simulated drive: nothing will be written to a real disc.")
+        }
         runner.start(job: job) { [weak self] outcome in
             self?.notify(outcome, title: job.volumeName)
         }
@@ -149,7 +227,19 @@ final class AppModel {
 
     func refreshDrive() {
         drive = burner.currentDrive()
+        let previous = insertedMedia
         insertedMedia = burner.currentMedia()
+        if let inserted = insertedMedia, inserted != previous {
+            selectMediaMatching(inserted)
+        }
+    }
+
+    /// Sets the Media picker from a newly inserted blank disc. Runs only when the disc
+    /// changes, so a manual choice afterwards is kept.
+    private func selectMediaMatching(_ inserted: MediaStatus) {
+        guard !runner.isRunning, let detected = MediaType.matching(inserted), detected != media else { return }
+        media = detected
+        showHint("Media set to \(detected.displayName) to match the inserted disc.")
     }
 
     // MARK: Notifications

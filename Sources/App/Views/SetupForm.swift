@@ -33,23 +33,31 @@ struct SetupForm: View {
                 Text(verificationHint).font(.caption).foregroundStyle(.secondary)
             }
 
-            Section("Options") {
-                Toggle("Clean Apple metadata (dot_clean, .DS_Store)", isOn: $model.cleanMetadata)
-                Text("Changes files in the source folder.").font(.caption).foregroundStyle(.secondary)
-            }
-
             Section("Steps") {
-                ForEach(PipelineRunner.standardSteps(), id: \.id) { step in
-                    Toggle(step.title, isOn: Binding(
-                        get: { !model.skippedSteps.contains(step.id) },
-                        set: { enabled in
-                            if enabled { model.skippedSteps.remove(step.id) } else { model.skippedSteps.insert(step.id) }
-                        }))
+                ForEach(PipelineRunner.standardSteps().filter(\.hasStepToggle), id: \.id) { step in
+                    Toggle(isOn: Binding(
+                        get: { model.isStepOn(step.id) },
+                        set: { model.setStep(step.id, on: $0) })
+                    ) {
+                        Text(step.title)
+                        if step.id == .clean {
+                            Text("dot_clean and .DS_Store removal. Changes files in the source folder.")
+                        }
+                    }
                 }
+                Text("Disc verification is set by Verify above.").font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
         .disabled(model.runner.isRunning)
+        .overlay(alignment: .bottom) {
+            if let hint = model.hint {
+                HintBanner(message: hint) { model.dismissHint() }
+                    .padding(12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: model.hint)
     }
 
     private var verificationHint: String {
@@ -59,6 +67,28 @@ struct SetupForm: View {
         case .both: "Drive compare plus checksum check. Two full reads."
         case .none: "No verification. You can still run Verify a Disc… later."
         }
+    }
+}
+
+private struct HintBanner: View {
+    let message: String
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "info.circle.fill").foregroundStyle(.blue)
+            Text(message).font(.callout).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button(action: dismiss) {
+                Image(systemName: "xmark").font(.caption)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
+        .shadow(radius: 4, y: 2)
     }
 }
 

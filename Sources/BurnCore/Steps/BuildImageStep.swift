@@ -15,13 +15,17 @@ public struct BuildImageStep: PipelineStep {
 
         let output = job.imageURL
         if FileManager.default.fileExists(atPath: output.path) {
-            let overwrite = await context.confirm(ConfirmationRequest(
-                title: "Image already exists",
-                message: "\(output.path) already exists. Replace it?",
-                confirmLabel: "Replace",
-                isDestructive: true))
-            guard overwrite else { throw PipelineError.declined("existing image kept") }
+            // Normally decided before the run starts (see ArchiveJob.needsExistingImageChoice).
+            if job.existingImage != .replace {
+                let overwrite = await context.confirm(ConfirmationRequest(
+                    title: "Image already exists",
+                    message: "\(output.path) already exists. Replace it?",
+                    confirmLabel: "Replace",
+                    isDestructive: true))
+                guard overwrite else { throw PipelineError.declined("existing image kept") }
+            }
             try FileManager.default.removeItem(at: output)
+            await context.log("Deleted the existing \(output.lastPathComponent).")
         }
         try FileManager.default.createDirectory(at: job.outputFolder, withIntermediateDirectories: true)
 

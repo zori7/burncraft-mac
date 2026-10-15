@@ -15,6 +15,8 @@ public struct VerifyStep: PipelineStep {
 
     public let id = StepID.verify
     public let title = "Verify disc"
+    /// Controlled by the verification mode instead.
+    public let hasStepToggle = false
 
     public func isEnabled(for job: ArchiveJob) -> Bool {
         if case .folder = target { return true }

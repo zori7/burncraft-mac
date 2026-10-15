@@ -10,8 +10,17 @@
 // - A failing step (image larger than the disc) stops the run; later steps are skipped.
 // - A checksum mismatch on the "disc" fails the verify step and logs the file.
 // - Declining to overwrite an existing image stops the run and keeps the file.
+// - Existing image chosen before the run: Replace rebuilds without asking again;
+//   Use Existing skips cleanup, checksums and build and burns the old file as it is.
+// - The choice is needed only when the image would be built and the file exists.
 // - Cancelling mid-burn aborts the burn, marks it cancelled and skips the rest.
 // - A confirmation waits for the user's answer and continues when accepted.
+// - A matching disc burns without any confirmation (no final "Burn?" prompt).
+// - An inserted disc that doesn't match Media (e.g. BD-R DL 50 with Media set to
+//   BD-XL 100) pauses the burn for confirmation: declining stops the run before
+//   burning, accepting burns; a matching disc doesn't ask.
+// - Only "Verify disc" lacks a step toggle (the verification mode controls it), and
+//   with mode None it is skipped even though no step was switched off.
 
 @testable import BurnCore
 import Foundation
@@ -70,6 +79,16 @@ struct PipelineRunnerTests {
         #expect(verify.state == (mode.usesChecksumVerify ? .done : .skipped))
     }
 
+    @Test func verifyStepIsControlledOnlyByVerificationMode() async throws {
+        let withoutToggle = PipelineRunner.standardSteps().filter { !$0.hasStepToggle }.map(\.id)
+        #expect(withoutToggle == [.verify])
+
+        let s = try makeSetup(verification: .none)
+        #expect(s.job.skippedSteps.isEmpty)
+        await s.runner.run(job: s.job)
+        #expect(s.runner.steps.first { $0.id == .verify }?.state == .skipped)
+    }
+
     @Test func userSkippedStepsDoNotRun() async throws {
         let s = try makeSetup()
         var job = s.job
@@ -119,6 +138,50 @@ struct PipelineRunnerTests {
         #expect(try Data(contentsOf: s.job.imageURL) == Data([0]))
     }
 
+    @Test func replacingExistingImageRebuildsWithoutAsking() async throws {
+        let s = try makeSetup(autoConfirm: nil) // any confirmation would hang the test
+        try Data([0]).write(to: s.job.imageURL)
+        var job = s.job
+        #expect(job.needsExistingImageChoice)
+        job.existingImage = .replace
+        job.skippedSteps = [.sizeCheck, .burn, .verify]
+
+        #expect(await s.runner.run(job: job) == .succeeded)
+        #expect(try Data(contentsOf: s.job.imageURL) != Data([0]))
+        #expect(s.runner.logLines.contains { $0.contains("Deleted the existing TEST_01.iso") })
+    }
+
+    @Test func reusingExistingImageSkipsImageInputSteps() async throws {
+        // Drive verify: the fake "disc" here is the source folder, which has no manifest
+        // when checksums are skipped. (A reused real image carries its own manifest.)
+        let s = try makeSetup(verification: .drive)
+        let old = Data(repeating: 7, count: 2048)
+        try old.write(to: s.job.imageURL)
+        var job = s.job
+        job.existingImage = .reuse
+
+        #expect(await s.runner.run(job: job) == .succeeded)
+        let states = Dictionary(uniqueKeysWithValues: s.runner.steps.map { ($0.id, $0.state) })
+        #expect(states[.clean] == .skipped && states[.checksums] == .skipped && states[.buildImage] == .skipped)
+        #expect(states[.burn] == .done)
+        #expect(s.commands.calls.isEmpty) // no dot_clean, no hdiutil
+        #expect(s.burner.requests.first?.image == s.job.imageURL)
+        #expect(try Data(contentsOf: s.job.imageURL) == old)
+    }
+
+    @Test func existingImageChoiceNeededOnlyWhenBuildingOverAFile() throws {
+        let s = try makeSetup()
+        var job = s.job
+        #expect(!job.needsExistingImageChoice) // no file yet
+        try Data([0]).write(to: job.imageURL)
+        #expect(job.needsExistingImageChoice)
+        job.skippedSteps = [.buildImage]
+        #expect(!job.needsExistingImageChoice) // not building: the file is just burned
+        job.skippedSteps = []
+        job.existingImage = .reuse
+        #expect(!job.needsExistingImageChoice) // already decided
+    }
+
     @Test func cancelDuringBurnAbortsAndSkipsRest() async throws {
         let s = try makeSetup()
         s.burner.hangUntilCancelled = true
@@ -136,6 +199,38 @@ struct PipelineRunnerTests {
         #expect(states[.burn] == .cancelled)
         #expect(states[.verify] == .skipped)
         #expect(!s.runner.isRunning)
+    }
+
+    @Test func mismatchedDiscAsksBeforeBurning() async throws {
+        let declined = try makeSetup(autoConfirm: false)
+        var job = declined.job
+        job.media = .bdxl100
+        job.skippedSteps = [.sizeCheck]
+        let outcome = await declined.runner.run(job: job)
+        #expect(outcome == .failed(PipelineError.declined("inserted disc doesn't match Media").localizedDescription))
+        #expect(declined.burner.requests.isEmpty)
+
+        let accepted = try makeSetup(autoConfirm: true)
+        job = accepted.job
+        job.media = .bdxl100
+        #expect(await accepted.runner.run(job: job) == .succeeded)
+        #expect(accepted.burner.requests.count == 1)
+        #expect(accepted.runner.logLines.contains { $0.contains("looks like BD-R DL 50 GB, but Media is set to BD-R XL 100 GB") })
+    }
+
+    @Test func matchingDiscBurnsWithoutAsking() async throws {
+        let s = try makeSetup(autoConfirm: nil) // a confirmation would hang the test
+        #expect(await s.runner.run(job: s.job) == .succeeded)
+        #expect(s.burner.requests.count == 1)
+        #expect(s.runner.logLines.contains { $0.contains("Burning TEST_01.iso") })
+    }
+
+    @Test func mediaMismatchDescriptions() {
+        let blank50 = MediaStatus(isBlank: true, discRecordingType: "DRDeviceMediaTypeBDR", freeBytes: MediaType.bdr50.capacityBytes)
+        #expect(BurnStep.mediaMismatch(inserted: blank50, expected: .bdr50) == nil)
+        #expect(BurnStep.mediaMismatch(inserted: blank50, expected: .bdxl100) != nil)
+        let blankRE = MediaStatus(isBlank: true, discRecordingType: "DRDeviceMediaTypeBDRE", freeBytes: MediaType.bdr50.capacityBytes)
+        #expect(BurnStep.mediaMismatch(inserted: blankRE, expected: .bdr50) == "Inserted disc (BD-RE) is not a BD-R DL 50 GB.")
     }
 
     @Test func pendingConfirmationIsAnsweredByUser() async throws {

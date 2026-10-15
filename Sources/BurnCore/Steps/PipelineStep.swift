@@ -94,10 +94,14 @@ public enum PipelineError: LocalizedError, Sendable, Equatable {
 public protocol PipelineStep: Sendable {
     var id: StepID { get }
     var title: String { get }
+    /// False when another setting already turns the step on or off (for example the
+    /// verification mode), so the UI shouldn't offer a separate on/off switch for it.
+    var hasStepToggle: Bool { get }
     func isEnabled(for job: ArchiveJob) -> Bool
     func run(_ context: PipelineContext) async throws
 }
 
 extension PipelineStep {
+    public var hasStepToggle: Bool { true }
     public func isEnabled(for job: ArchiveJob) -> Bool { true }
 }

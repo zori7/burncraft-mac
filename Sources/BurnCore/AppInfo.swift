@@ -29,6 +29,15 @@ public enum AppInfo {
             .appending(path: name, directoryHint: .isDirectory)
     }
 
+    /// Hidden developer setting: use `SimulatedBurner` instead of a real drive.
+    /// Turn on with `defaults write <bundle id> SimulatedDrive -bool YES`
+    /// or launch with `--args -SimulatedDrive YES`.
+    public static let simulatedDriveDefaultsKey = "SimulatedDrive"
+
+    public static var isSimulatedDriveEnabled: Bool {
+        UserDefaults.standard.bool(forKey: simulatedDriveDefaultsKey)
+    }
+
     public static let defaultVolumePrefix = "MEDIA_ARCHIVE_"
     public static let defaultBurnSpeed = 4
     public static let mountTimeout: Duration = .seconds(300)

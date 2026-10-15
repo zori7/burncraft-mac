@@ -21,4 +21,10 @@ public enum VerificationMode: String, CaseIterable, Identifiable, Sendable {
 
     public var usesDriveVerify: Bool { self == .drive || self == .both }
     public var usesChecksumVerify: Bool { self == .checksums || self == .both }
+
+    /// The mode to switch to when checksum generation is turned off: checksum
+    /// verification needs the manifest, so only the drive check remains.
+    public var withoutChecksumVerify: VerificationMode {
+        usesChecksumVerify ? .drive : self
+    }
 }

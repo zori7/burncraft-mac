@@ -6,6 +6,7 @@ A native macOS app for burning long-term archive discs. It turns a folder into a
 
 - **Full pipeline:** size check → optional metadata cleanup → checksums → UDF 2.50 image → burn → verify. Any step can be switched off (for example, to burn an existing image).
 - **Size check:** compares the source with the free space on the inserted blank disc, or with the selected disc type's limit (BD-R DL: 46.0 GiB). It warns before going over.
+- **Disc detection:** when you insert a blank disc, the Media setting switches to match it: BD-R 25, BD-R DL 50 or BD-XL 100 (told apart by capacity), or BD-RE. You can still change it by hand.
 - **Metadata cleanup (optional, on by default):** `dot_clean -m` and removal of `.DS_Store` files. This modifies the source folder.
 - **Portable checksums:** `checksums.sha256` is written in `shasum` format and ends up on the disc. Any machine can check it with `shasum -a 256 -c checksums.sha256`, without this app.
 - **Burning:** uses Apple's DiscRecording framework (the engine behind `drutil`) and shows drive and disc status. Default speed is 4x. The Mac is kept awake during the burn (like `caffeinate -i`).
@@ -62,9 +63,23 @@ swift test
 1. Choose (or drop) the **source folder**.
 2. Check the **volume name** (default `MEDIA_ARCHIVE_YYYYMMDD`) and choose where the **image is saved**. For a 50 GB disc you need about 50 GB free there.
 3. Choose the **media**, **speed** and **verification mode**.
-4. Press **Start**. The app asks before anything destructive: going over the size limit, replacing an existing image, starting the burn.
+4. Press **Start**. The app asks only when something needs a decision: the source is over the size limit, an image with that name already exists (use it or replace it), or the inserted disc doesn't match the Media setting. Otherwise the run continues unattended through the burn.
 5. Insert a blank disc when asked. After the burn, the disc mounts and is verified (if the mode includes checksums).
 6. When it's done, keep or delete the image.
+
+## Simulated drive (development)
+
+To try the whole flow without a burner or blank discs, turn on the hidden simulated drive:
+
+```sh
+defaults write com.tapsiom.archiveburner SimulatedDrive -bool YES   # stays on
+open build/ArchiveBurner.app --args -SimulatedDrive YES              # this launch only
+defaults delete com.tapsiom.archiveburner SimulatedDrive            # turn off
+```
+
+The drive shows up as **Simulated BD Burner** with an orange **SIMULATED** badge, and the log of each run says so. It starts with a blank BD-R DL. A "burn" shows progress for about 10 seconds (plus 5 seconds when drive verify is on), then mounts the ISO read-only, so the Verify step checks it the same way it would check a burned disc. After that the disc counts as burned: press **Eject / New Disc** to unmount it and insert a new blank one. Cancelling during the burn leaves the disc unusable, as with a real drive.
+
+Nothing is written to a real disc in this mode.
 
 ## Project layout
 
@@ -77,7 +92,7 @@ Sources/BurnCore/
   Imaging/              ImageFormat protocol, UDFImageFormat (hdiutil)
   Checksums/            Generator and verifier (shasum-compatible)
   Steps/                PipelineStep protocol, one file per step, PipelineRunner
-  Burning/              DiscBurning protocol, DiscRecordingBurner
+  Burning/              DiscBurning protocol, DiscRecordingBurner, SimulatedBurner
   System/               Process runner, mount watcher, sleep prevention, logging
 Sources/App/            SwiftUI shell (AppModel and views)
 Tests/BurnCoreTests/    Each file starts with a comment describing what it covers

@@ -65,4 +65,20 @@ extension MediaType {
     public static let `default` = bdr50
 
     public static func media(id: String) -> MediaType? { all.first { $0.id == id } }
+
+    /// How far a blank disc's reported space may be from an entry's capacity and still match.
+    static let detectionTolerance = 0.05
+
+    /// The entry matching an inserted blank disc, by DiscRecording type and capacity.
+    /// The drive reports 25, 50 and 100 GB BD-R all as "BD-R", so the free space decides.
+    /// Returns nil for non-blank discs or when no entry is close enough.
+    public static func matching(_ status: MediaStatus) -> MediaType? {
+        guard status.isBlank, let free = status.freeBytes, free > 0 else { return nil }
+        return all
+            .filter { $0.matches(discRecordingType: status.discRecordingType) }
+            .map { (media: $0, distance: abs(Double($0.capacityBytes - free)) / Double($0.capacityBytes)) }
+            .filter { $0.distance <= detectionTolerance }
+            .min { $0.distance < $1.distance }?
+            .media
+    }
 }

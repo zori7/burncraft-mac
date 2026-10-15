@@ -3,10 +3,13 @@ import Foundation
 public struct DriveInfo: Sendable, Equatable {
     public let name: String
     public let canWriteBD: Bool
+    /// True for `SimulatedBurner`; the UI marks it so it can't be mistaken for a real drive.
+    public let isSimulated: Bool
 
-    public init(name: String, canWriteBD: Bool) {
+    public init(name: String, canWriteBD: Bool, isSimulated: Bool = false) {
         self.name = name
         self.canWriteBD = canWriteBD
+        self.isSimulated = isSimulated
     }
 }
 

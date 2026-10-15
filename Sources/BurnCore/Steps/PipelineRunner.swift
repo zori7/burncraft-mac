@@ -75,10 +75,13 @@ public final class PipelineRunner {
         defer { isRunning = false }
 
         steps = definitions.map { step in
-            let enabled = step.isEnabled(for: job) && !job.skippedSteps.contains(step.id)
+            let enabled = step.isEnabled(for: job) && !job.effectiveSkippedSteps.contains(step.id)
             return StepStatus(id: step.id, title: step.title, state: enabled ? .pending : .skipped)
         }
         appendLog("— \(AppInfo.name) run: \(job.sourceFolder.path) → \(job.volumeName)")
+        if job.existingImage == .reuse {
+            appendLog("Reusing existing image \(job.imageURL.path); cleanup, checksums and build are skipped.")
+        }
 
         var outcome = Outcome.succeeded
         for (index, step) in definitions.enumerated() where steps[index].state == .pending {

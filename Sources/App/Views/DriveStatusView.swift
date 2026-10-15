@@ -10,12 +10,23 @@ struct DriveStatusView: View {
                 .font(.title2)
                 .foregroundStyle(model.drive == nil ? .secondary : .primary)
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.drive?.name ?? "No burner connected").font(.headline)
+                HStack(spacing: 6) {
+                    Text(model.drive?.name ?? "No burner connected").font(.headline)
+                    if model.drive?.isSimulated == true {
+                        Text("SIMULATED")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .foregroundStyle(.white)
+                            .background(.orange, in: Capsule())
+                            .help("No real disc is written. Turn off with: defaults delete \(AppInfo.bundleID) \(AppInfo.simulatedDriveDefaultsKey)")
+                    }
+                }
                 Text(mediaDescription).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Eject") { model.eject() }
-                .disabled(model.insertedMedia == nil || model.runner.isRunning)
+            Button(model.drive?.isSimulated == true ? "Eject / New Disc" : "Eject") { model.eject() }
+                .disabled(model.insertedMedia == nil || model.isBurning)
         }
         .padding(12)
     }
