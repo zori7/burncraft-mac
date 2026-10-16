@@ -2,5 +2,5 @@
 enum AppConfig {
     static let name = "ArchiveBurner"
     static let bundleID = "com.tapsiom.archiveburner"
-    static let version = "0.2.0"
+    static let version = "0.3.0"
 }
