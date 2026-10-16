@@ -21,14 +21,16 @@ A native macOS app for burning long-term archive discs. It turns a folder into a
 
 - macOS 14 or later
 - An internal or USB Blu-ray burner. Many slim USB drives need both USB plugs connected to burn reliably.
-- Building from source needs Xcode 16+ or a Swift 6 toolchain.
+- Building from source needs Xcode 16+ or a Swift 6 toolchain, plus [`create-dmg`](https://github.com/create-dmg/create-dmg) to package the DMG.
 
 ## Install
 
-1. Download `ArchiveBurner-<version>.zip` from [Releases](https://github.com/zori7/burncraft-mac/releases).
-2. Unzip it. Double-click the zip in Finder; Safari usually unzips downloads automatically.
-3. Drag **ArchiveBurner.app** into your **Applications** folder.
-4. Open it. The app isn't notarized by Apple, so the first launch is blocked with a warning. To allow it:
+1. Download `ArchiveBurner-<version>.dmg` from [Releases](https://github.com/zori7/burncraft-mac/releases).
+2. Double-click the DMG to open it. A window shows the app next to an **Applications** shortcut.
+3. Drag **ArchiveBurner** onto **Applications**. Then eject the disk image (the eject button next to it in the Finder sidebar) and delete the DMG if you like. Run the app from Applications, not from inside the disk image.
+
+   Prefer a zip? Each release also has `ArchiveBurner-<version>.zip`. Unzip it (Safari usually does this automatically) and drag **ArchiveBurner.app** into **Applications**.
+4. Open it from Applications. The app isn't notarized by Apple, so the first launch is blocked with a warning. To allow it:
    - **macOS 15 and later:** try to open the app once, then go to **System Settings → Privacy & Security**, scroll down to the message about ArchiveBurner, click **Open Anyway** and confirm.
    - **macOS 14:** right-click (or Control-click) the app, choose **Open**, then click **Open** in the dialog.
    - **If macOS says the app "is damaged"**, or neither option works, remove the download quarantine in Terminal:
@@ -45,11 +47,12 @@ The app is a universal build that runs on both Apple Silicon and Intel Macs.
 ```sh
 git clone https://github.com/zori7/burncraft-mac.git
 cd burncraft-mac
-./scripts/build-app.sh        # → build/ArchiveBurner.app + build/ArchiveBurner-<version>.zip
+brew install create-dmg        # needed for the DMG step
+./scripts/build-app.sh         # → build/ArchiveBurner.app + ArchiveBurner-<version>.zip and .dmg
 open build/ArchiveBurner.app
 ```
 
-The script builds a universal binary (arm64 + x86_64), signs it ad hoc, and packages it with `ditto` into the zip used for GitHub releases.
+The script builds a universal binary (arm64 + x86_64), generates the app icon from `Resources/AppIcon.png`, signs it ad hoc, and packages it two ways for GitHub releases: a zip (with `ditto`) and a drag-to-Applications DMG (with [`create-dmg`](https://github.com/create-dmg/create-dmg)).
 
 For development:
 
@@ -96,6 +99,7 @@ Sources/BurnCore/
   System/               Process runner, mount watcher, sleep prevention, logging
 Sources/App/            SwiftUI shell (AppModel and views)
 Tests/BurnCoreTests/    Each file starts with a comment describing what it covers
+Resources/AppIcon.png   App icon source (1024×1024); build-app.sh turns it into AppIcon.icns
 scripts/                gen-config.sh, build-app.sh
 ```
 
